@@ -1,0 +1,529 @@
+---
+title: "Exploring 100 years of Australian temperature data via the ACORN-SAT dataset"
+author: "Tom Perkins"
+date: "14/01/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# The Data
+
+There is broad global scientific consensus that average global temperatures across the Earth are increasing, and at an increasing rate. In 2020, this has been  topical with an especially severe bushfire season, for which some of the key causes are discussed [here](https://www.abc.net.au/news/2020-01-23/has-australias-climate-switch-been-flicked/11885300). 
+
+The Australian Bureau of Meteorology generously provides access to The Australian Climate Observations Reference Network – Surface Air Temperature (ACORN-SAT) dataset, which summarises over 100 years of daily minimum and maximum temperatures from 112 weather stations across Australia. These temperatures are adjusted & homogenised to control for biasing factors that can arise over time. The [BOM website](http://www.bom.gov.au/climate/data/acorn-sat/#tabs=ACORN%E2%80%90SAT) has further information on these methodologies
+
+# Data set-up
+
+The data comprising the ACORN-SAT can be downloaded from [this link](http://www.bom.gov.au/climate/data/acorn-sat/#tabs=Data-and-networks), which provides 2 x 112 .csv files (minimum & maximum daily temperatures from 112 weather stations
+
+Once the files have been downloaded, we can extract the data from two folders (acorn_sat_v2_daily_tmax & acorn_sat_v2_daily_tmin)
+
+We will start with the 'maximum' temperature folder, and bind the 112 .csv's into a single data-frame. This can be achieved via a nifty function created by Stack Overflow user leerssej (details of which can be found [here](https://stackoverflow.com/questions/11433432/how-to-import-multiple-csv-files-at-once))
+
+Lets load in all required dependencies ...
+
+```{r Load dependencies, results='hide', message=FALSE, warning=FALSE}
+library(tidyverse)
+library(purrr)
+library(data.table)
+library(kableExtra)
+library(ggplot2)
+library(plotly)
+library(sf)
+library(mapview)
+```
+
+Write leerssej's ".csv reading" function ...
+
+```{r function to data, results='hide', message=FALSE, warning=FALSE}
+# function to read in multiple csv's, plus the file-name 
+read_plus <- function(flnm) {
+  read_csv(flnm) %>% 
+    mutate(filename = flnm)
+}
+```
+
+Then build our dataframe from the 112 max-temperature files
+
+```{r read in table code (example), results='hide', message=FALSE, warning=FALSE}
+tbl <-
+  list.files(path = "directory of max temp folder goes here",
+             pattern = "*.csv", 
+             full.names = T) %>% 
+  map_df(~read_plus(.)) 
+```
+
+```{r read in table code (actual), results='hide', include=FALSE, message=FALSE, warning=FALSE}
+tbl <-
+  list.files(path = "/Users/perkot/Dropbox/Analytics/Personal/R/git/Max Min Temperatures/acorn_sat_v2_daily_tmax/",
+             pattern = "*.csv", 
+             full.names = T) %>% 
+  map_df(~read_plus(.)) 
+```
+
+One of the columns summarises the file-location & file-name. We can use regex & tidyverse tools to extract out each weather station location from the file-path name  
+
+```{r table cleaning, results='hide', message=FALSE, warning=FALSE}
+# Extract part of the string after "//"
+tbl$location <- sub('.*//', '', tbl$filename)
+# Extract only the location information 
+tbl$location2 <- sapply(tbl$location, function(x) unlist(strsplit(x, "\\."))[2])
+# remove .csv reference
+tbl$location <- NULL
+tbl$filename <- NULL
+
+# extract out location names 
+location_names <- subset(tbl, is.na(date)) %>%
+                  filter(location2 != "csv") 
+  
+location_names <- select(location_names, `site name`, location2)
+
+# remove NA rows 
+tbl <- tbl %>% drop_na(date)
+# remove unnecessary columns
+tbl$`site number` <- NULL
+tbl$`site name` <- NULL
+tbl$lat <- NULL
+tbl$long <- NULL
+tbl$elev <- NULL
+# join back 
+tbl <- tbl %>% 
+  left_join(location_names, by = "location2")
+# Re-order Columns
+tbl <- tbl[,c(1, 4, 2, 3)]
+```
+
+Producing the below dataframe
+
+```{r print table preview, echo=FALSE}
+#kable formats tables much more nicely 
+kable(head(tbl))%>% #head limits to just top rows
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive", font_size = 8))
+```
+
+## Additional date fields 
+
+For visualisation purposes, let's add some further date dimensions
+
+```{r date-fields, results='hide', message=FALSE, warning=FALSE}
+# Year from date
+tbl$Year <- year(tbl$date)
+
+# Month from date 
+library(anytime)
+tbl$Month <- format(anydate(tbl$date), "%m")
+
+# Week from date 
+library(lubridate)
+tbl$Week <- isoweek(ymd(tbl$date))
+
+# Day of the week
+# tbl$DayofWeek <- weekdays(as.Date(tbl$Date))
+
+# Season
+tbl$Season[
+  tbl$Month == "12" |
+    tbl$Month == "01" |
+    tbl$Month == "02"] <-
+  "Summer"
+
+tbl$Season[
+  tbl$Month == "03" |
+    tbl$Month == "04" |
+    tbl$Month == "05"] <-
+  "Autumn"
+
+tbl$Season[
+  tbl$Month == "06" |
+    tbl$Month == "07" |
+    tbl$Month == "08"] <-
+  "Winter"
+
+tbl$Season[
+  tbl$Month == "09" |
+    tbl$Month == "10" |
+    tbl$Month == "11"] <-
+  "Spring"
+
+# Year-Month
+setDT(tbl)[, Yr_Month := format(as.Date(date), "%Y-%m") ]
+
+# Year-Week (created)
+tbl$Yr_Week <- paste(tbl$Year, tbl$Week, sep="-")
+
+tbl$Era <- ifelse(tbl$Year>=1910 & tbl$Year<=1919,"1910s",
+           ifelse(tbl$Year>=1920 & tbl$Year<=1929,"1920s",
+           ifelse(tbl$Year>=1930 & tbl$Year<=1939,"1930s",
+           ifelse(tbl$Year>=1940 & tbl$Year<=1949,"1940s",
+           ifelse(tbl$Year>=1950 & tbl$Year<=1959,"1950s",
+           ifelse(tbl$Year>=1960 & tbl$Year<=1969,"1960s",
+           ifelse(tbl$Year>=1970 & tbl$Year<=1979,"1970s",
+           ifelse(tbl$Year>=1980 & tbl$Year<=1989,"1980s",
+           ifelse(tbl$Year>=1990 & tbl$Year<=1999,"1990s",
+           ifelse(tbl$Year>=2000 & tbl$Year<=2009,"2000s",
+           ifelse(tbl$Year>=2010 & tbl$Year<=2019,"2010s", 0)))))))))))
+```
+
+Let's preview this revised dataframe 
+
+```{r print table preview (2), echo=FALSE}
+#kable formats tables much more nicely 
+kable(head(tbl))%>% #head limits to just top rows
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive", font_size = 8))
+```
+
+## Weather Station coordinates 
+
+The zip file includes a .txt/.csv file with coordinates for the weather stations. Let's read in this file & join to our dataframe   
+
+```{r coordinates table (actual), results='hide', message=FALSE, warning=FALSE, include=FALSE}
+coordinates <- read.csv("/Users/perkot/Dropbox/Analytics/Personal/R/git/Max Min Temperatures/acorn_sat_v2_daily_tmax/station-coords.csv", 
+               header = TRUE, 
+               stringsAsFactors=FALSE)
+```
+
+```{r coordinates join, results='hide', message=FALSE, warning=FALSE}
+coordinates$location2 <- NULL
+tbl <- tbl %>% 
+  left_join(coordinates, by = c("site name" = "site.name"))
+```
+
+Using the "mapview" package, we can visualise the location of the 112 weather stations in Australia. A benefit of this package is unlike Google's map package, it can be used without an API key
+
+```{r map view, results='hide', message=FALSE, warning=FALSE}
+# create a map of all weather stations
+weather_stations <- st_as_sf(coordinates, coords = c("long", "lat"), crs = 4326)
+```
+
+```{r map view plot, echo=FALSE, message=FALSE, warning=FALSE}
+mapview(weather_stations)
+```
+
+## Daily minimum temperatures 
+
+Using the same approach implemented for maximum temperatures, we can read-in the minimum temperature files, & join the data to our existing dataframe
+
+```{r read in table code (example 2), results='hide', message=FALSE, warning=FALSE}
+tbl_min <-
+  list.files(path = "directory of max temp folder goes here",
+             pattern = "*.csv", 
+             full.names = T) %>% 
+  map_df(~read_plus(.)) 
+```
+
+```{r minimum temp, results='hide', include=FALSE, message=FALSE, warning=FALSE}
+# MIN table 
+tbl_min <-
+  list.files(path = "/Users/perkot/Dropbox/Analytics/Personal/R/git/Max Min Temperatures/acorn_sat_v2_daily_tmin/",
+             pattern = "*.csv", 
+             full.names = T) %>% 
+  map_df(~read_plus(.)) 
+```
+
+```{r minimum temp clean, results='hide', message=FALSE, warning=FALSE}
+# this takes every part of the string after "//"
+tbl_min$location <- sub('.*//', '', tbl_min$filename)
+# now take only the location information 
+tbl_min$location2 <- sapply(tbl_min$location, function(x) unlist(strsplit(x, "\\."))[2])
+# remove .csv reference
+tbl_min$location <- NULL
+tbl_min$filename <- NULL
+
+# remove these NA columns 
+tbl_min <- tbl_min %>% drop_na(date)
+# remove not needed columns
+tbl_min$`site number` <- NULL
+tbl_min$`site name` <- NULL
+```
+
+```{r minimum temp clean join, results='hide', message=FALSE, warning=FALSE}
+# join min temps to core-table 
+tbl <- left_join(tbl, tbl_min, 
+                 by = c("location2" = "location2", "date" = "date"))
+# remove table
+rm(tbl_min)
+
+# re-order columns
+tbl <- tbl[,c(1:3,15, 4:14)]
+```
+
+This results in a dataframe with ~ 3.5 million rows of minimum and maximum temperature data from 112 Australian weather stations since the beginning of the 20th century. With this, let's begin some trend-analyses 
+
+```{r print table preview (3), echo=FALSE}
+#kable formats tables much more nicely 
+kable(head(tbl))%>% #head limits to just top rows
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive", font_size = 8))
+```
+
+## Overall change in minimum & maximum daily temperatures over time
+
+We can efficiently summarise very large data-sets by combining tidyverse functions such as "group_by" with the visualisation capabilities of ggplot2. Below are two line charts depicting change to yearly-average minimum & maximum temperatures in Australia
+
+```{r overall change, results='hide', message=FALSE, warning=FALSE}
+# Minimalistic theme for visualisation 
+theme_plot_text <-
+  theme(
+    plot.title = element_text(size = 10, hjust = 0.5),
+    axis.title = element_text(size = 10),
+    legend.title = element_text(size = 10),
+    axis.text = element_text(size = 7))
+
+# Min temperature visualisation 
+temp.min <- tbl %>% 
+  group_by(Year) %>% 
+  filter(Year != 2019) %>% 
+  summarise(avgmin = mean(`minimum temperature (degC)`, na.rm = TRUE)) %>% 
+  ggplot(
+    aes(x = Year, 
+        y = avgmin,
+        colour = avgmin,
+        group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_smooth(method = "loess", 
+              colour = "#44546A", 
+              linetype = "dashed", 
+              fill = "#FFEDB4",
+              size = 0.5) +
+  scale_colour_gradient2(low = "#2BAAED", mid = "#8CD04F" , high = "#FFC52B",
+                         midpoint = 13) +
+  labs(title = "Figure 1. Average of daily minimum temperature across Australia between 1911 & 2018") + 
+  theme_bw() +
+  theme(panel.border = element_blank(),
+        axis.line = element_line(colour = "black", size = 0.2),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        plot.title = element_text(size = 6, hjust = 0.5),
+        legend.text = element_text(size = 6)) +
+  theme_plot_text +
+  labs(color = '°C', size = 6) 
+
+# Max temperature visualisation 
+temp.max <- tbl %>% 
+  group_by(Year) %>% 
+  filter(Year != 2019) %>% 
+  summarise(avgmax = mean(`maximum temperature (degC)`, na.rm = TRUE)) %>% 
+  ggplot(
+    aes(x = Year, 
+        y = avgmax,
+        colour = avgmax,
+        group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_smooth(method = "loess", 
+              colour = "#80190B", 
+              linetype = "dashed", 
+              fill = "#FFEDB4",
+              size = 0.5) +
+  scale_colour_gradient2(low = "#E1B823", mid = "#DD8033" , high = "#C95343",
+                         midpoint = 25) +
+  labs(title = "Figure 2. Average of daily maximum temperature across Australia between 1911 & 2018") + 
+  theme_bw() +
+  theme(panel.border = element_blank(),
+        axis.line = element_line(colour = "black", size = 0.2),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        plot.title = element_text(size = 6, hjust = 0.5),
+        legend.text = element_text(size = 6)) +
+  theme_plot_text +
+  labs(color = '°C', size = 6) 
+```
+
+These Figures show that across Australia, the lowest yearly-average minimum & maximum temperatures occurred between the 1940s & 1960s, with steady increases in temperatures occurring up until the present. Of particular note is that increasing temperatures begin to steepen from the 1990s onwards
+
+```{r plot overall, echo=FALSE, message=FALSE, warning=FALSE}
+temp.min
+temp.max
+```
+
+## Seasonal Temperatures 
+
+Clearly, temperatures across Australia are rising. What may be interesting to explore is whether these effects vary by season. Lets create summary tables of decade-average minimum & maximum temperatures for each of the four seasons:  
+
+```{r seasonal tables , results='hide', message=FALSE, warning=FALSE}
+# MINIMUM
+tbl.min.season <- tbl %>% 
+  group_by(Era, Season) %>% 
+  filter(Year != 2019) %>% 
+  summarise(avgmin = mean(`minimum temperature (degC)`, na.rm = TRUE)) %>% 
+  dcast(Season ~ Era) %>% 
+  mutate(Change = `2010s` - `1910s`) %>%
+  mutate(Percent_change = (Change / `2010s`)*100)
+# round to 1 decimal place
+tbl.min.season[2:14]=round(tbl.min.season[2:14],1) 
+
+# MAXIMUM
+tbl.max.season <- tbl %>% 
+  group_by(Era, Season) %>% 
+  filter(Year != 2019) %>% 
+  summarise(avgmax = mean(`maximum temperature (degC)`, na.rm = TRUE)) %>% 
+  dcast(Season ~ Era) %>% 
+  mutate(Change = `2010s` - `1910s`) %>%
+  mutate(Percent_change = (Change / `2010s`)*100)
+# round to 1 decimal place
+tbl.max.season[2:14]=round(tbl.max.season[2:14],1) 
+```
+
+Somewhat arbitrarily I have calculated the % change to min/max temperatures from decade to 1910 to 2010, at the exclusion of all decades in between. This approach shows all four seasons demonstrated increased temperatures, with slightly greater % increases observed in Autumn & Spring
+
+```{r print seasonal table preview min, echo=FALSE}
+#kable formats tables much more nicely 
+kable(head(tbl.min.season))%>% #head limits to just top rows
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive", font_size = 8))
+```
+
+Looking at change in decade-average maximum temperatures, there is remarkable consistency in the increase from the 1910s to the 2010s for summer, autumn & winter (4.6% increase). Interestingly, spring shows a greater % increase (5.5%) in maximum temperatures, perhaps lending credibility to the idea of "longer summers" 
+
+```{r print seasonal table preview max, echo=FALSE}
+#kable formats tables much more nicely 
+kable(head(tbl.max.season))%>% #head limits to just top rows
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive", font_size = 8))
+```
+
+Let's visualise seasonal change over time:
+
+```{r seasonal maximum , results='hide', message=FALSE, warning=FALSE}
+# min temperature Season visualisation  
+season.min <- tbl %>% 
+  group_by(Year, Season) %>% 
+  filter(Year != 2019) %>% 
+  summarise(avgmin = mean(`minimum temperature (degC)`, na.rm = TRUE)) %>% 
+  ggplot(
+    aes(x = Year, 
+        y = avgmin,
+        colour = Season,
+        group = Season)) +
+  geom_point() +
+  geom_line() +
+  geom_smooth(method = "loess", 
+              colour = "#80190B", 
+              linetype = "dashed", 
+              fill = "#FFEDB4",
+              size = 0.5) +
+  scale_colour_manual(values=c("#DD8033", "#43854C", "#C95343", "#77C4DF")) +
+  labs(title = "Figure 3. Average of daily minimum temperature across seasons between 1911 & 2018") + 
+  theme_bw() +
+  theme(panel.border = element_blank(),
+        axis.line = element_line(colour = "black", size = 0.2),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        plot.title = element_text(size = 6, hjust = 0.5),
+        legend.text = element_text(size = 6)) +
+  theme_plot_text +
+  labs(color = 'Season', size = 6) 
+
+# Max temperature Season visualisation  
+season.max <- tbl %>% 
+  group_by(Year, Season) %>% 
+  filter(Year != 2019) %>% 
+  summarise(avgmax = mean(`maximum temperature (degC)`, na.rm = TRUE)) %>% 
+  ggplot(
+    aes(x = Year, 
+        y = avgmax,
+        colour = Season,
+        group = Season)) +
+  geom_point() +
+  geom_line() +
+  geom_smooth(method = "loess", 
+              colour = "#80190B", 
+              linetype = "dashed", 
+              fill = "#FFEDB4",
+              size = 0.5) +
+  scale_colour_manual(values=c("#DD8033", "#43854C", "#C95343", "#77C4DF")) +
+  labs(title = "Figure 4. Average of daily maximum temperature across seasons between 1911 & 2018") + 
+  theme_bw() +
+  theme(panel.border = element_blank(),
+        axis.line = element_line(colour = "black", size = 0.2),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        plot.title = element_text(size = 6, hjust = 0.5),
+        legend.text = element_text(size = 6)) +
+  theme_plot_text +
+  labs(color = 'Season', size = 6) 
+```
+
+```{r plot seasonal, echo=FALSE, message=FALSE, warning=FALSE}
+season.min
+season.max
+```
+
+## Temperature changes at different weather stations
+
+We can also look at location-based differences in rising temperatures. Let's create tables for decade-average minimum and maximum temepratures, by location. 
+
+```{r WS max table, results='hide', message=FALSE, warning=FALSE}
+max.loc <- tbl %>% 
+  group_by(Era, `site name`) %>% 
+  filter(Year != 2019) %>% 
+  summarise(avgmax = mean(`maximum temperature (degC)`, na.rm = TRUE),
+            avgmin = mean(`minimum temperature (degC)`, na.rm = TRUE)) 
+
+max.era <- max.loc %>% 
+  subset(select = -c(4)) %>% 
+  dcast(`site name` ~ Era) %>% 
+  mutate(Change = `2010s` - `1910s`) %>%
+  mutate(Percent_change = (Change / `2010s`)*100) %>% 
+  arrange(desc(Percent_change)) %>%
+  top_n(20)
+# round to 1 decimal place
+max.era[2:14]=round(max.era[2:14],1) 
+
+min.era <- max.loc %>% 
+  subset(select = -c(3)) %>% 
+  dcast(`site name` ~ Era) %>% 
+  mutate(Change = `2010s` - `1910s`) %>%
+  mutate(Percent_change = (Change / `2010s`)*100) %>% 
+  arrange(desc(Percent_change)) %>%
+  top_n(20)
+# round to 1 decimal place
+min.era[2:14]=round(min.era[2:14],1) 
+```
+
+Examining the table below, each of the top-five weather stations in terms of increased minimum temperatures occupy south-east Australia. Four of these five locations are below national averages for minimum temperatures
+
+```{r WS min table preview, echo=FALSE}
+#kable formats tables much more nicely 
+kable(head(min.era))%>% #head limits to just top rows
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive", font_size = 8))
+```
+
+Regarding average maximum temperatures, curiously, five of the top six weather stations are located at airports. I have no idea what might be responsible for this, particularly considering the normalisation that goes into this dataset
+
+```{r WS max table preview, echo=FALSE}
+#kable formats tables much more nicely 
+kable(head(max.era))%>% #head limits to just top rows
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive", font_size = 8))
+```
+
+One final thing we can do is visualise the location of weather stations demonstrating the largest increase in daily max/min temperature 
+
+```{r WS table , results='hide', message=FALSE, warning=FALSE}
+# join our biggest temp increases to coordinates table
+top_max <- inner_join(coordinates, max.era, by = c("site.name" = "site name"))
+weather_stations_max <- st_as_sf(top_max, coords = c("long", "lat"), crs = 4326)
+```
+
+Examining maximum temperatures, it appears that southern austraila has been disproportionately impacted with 17 of the 20 highest temperature increasing stations being located below the mid-line of the country 
+
+```{r map view plot (2), echo=FALSE, message=FALSE, warning=FALSE}
+mapview(weather_stations_max)
+```
+
+```{r WS table 2 , results='hide', message=FALSE, warning=FALSE}
+# join our biggest temp increases to coordinates table
+top_min <- inner_join(coordinates, min.era, by = c("site.name" = "site name"))
+weather_stations_min <- st_as_sf(top_min, coords = c("long", "lat"), crs = 4326)
+```
+
+Examining minimum temperatures, a different trend is at play. Eastern austraila has been disproportionately impacted with 16/20 weather stations to record the largest % change in minimum temperatures existing on the eastern side of the country. Concerningly, but perhaps unsuprisingly, some of the biggest temperature changes by magnitude in Australia have been observed in Northern Victoria/Southern NSW, overlapping with regions impacted by the recent bushfires
+
+```{r map view plot (3), echo=FALSE, message=FALSE, warning=FALSE}
+mapview(weather_stations_min)
+```
+
+## Conclusions
+
+As Australia deals with a steadily heating climate, historic temperature data can help inform about the uniformity & magnitude of change. Daily maximum temperatures have increased proportionally more in southern australia, and are most strongly observed around Spring time. Daily minimum temperatures have disproportionately increased on the eastern coast, where increases are slightly more pronounced in Autumn & Spring 
