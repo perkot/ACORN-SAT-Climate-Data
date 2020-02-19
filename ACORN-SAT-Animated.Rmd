@@ -1,0 +1,260 @@
+---
+title: "Animated visualisation of 100 years of Australian temperature data via the ACORN-SAT dataset"
+author: "Tom Perkins"
+date: "19/02/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# The Data
+
+In a [previous analysis](https://perkot.github.io/ACORN-SAT-Climate-Data/), I explored publicly available data from the [Bureau of Meteorology](http://www.bom.gov.au/climate/data/acorn-sat/#tabs=ACORN%E2%80%90SAT) to examine change in Australian temperatures. Here, we extend upon this data using gganimate to create three dynamic plots
+
+Let's load our dependencies 
+
+```{r Load dependencies, results='hide', message=FALSE, warning=FALSE}
+library(tidyverse)
+require(ggplot2)
+require(gganimate)
+require(viridis)
+require(scales)
+require(gifski)
+require(png)
+require(transformr)
+require(kableExtra)
+```
+
+& read-in the pre-cleaned temperature data from the previous kernel 
+
+```{r function to data, results='hide', message=FALSE, warning=FALSE}
+tbl <- read.csv("ACORN-SAT-Clean.csv", 
+                header = TRUE, 
+                stringsAsFactors = FALSE)
+```
+
+```{r print table preview, echo=FALSE}
+#kable formats tables much more nicely 
+kable(head(tbl))%>% #head limits to just top rows
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive", font_size = 8))
+```
+
+Before beginning, if using a mac, you may want to consult [this resource](https://www.youtube.com/watch?v=VfLRhPEuYDc) to do some required set-up in Terminal. Otherwise, we should be good-to-go.
+
+# Plot [1]
+
+## Monthly average-maximum temperatures, animated by year
+
+In one piece of code, lets aggregate the data & create our plot
+
+```{r month plot, results='hide', message=FALSE, warning=FALSE}
+# Minimalistic theme for visualisation 
+theme_plot_text <-
+  theme(
+    plot.title = element_text(size = 10, hjust = 0.5),
+    axis.title = element_text(size = 10),
+    legend.title = element_text(size = 10),
+    axis.text = element_text(size = 7))
+
+# plot
+month.plot <- tbl %>% 
+  group_by(Month, Year) %>% 
+  filter(Year != 2019) %>% 
+  summarise(avgmax = mean(maximum.temperature..degC., na.rm = TRUE)) %>% 
+  ggplot(aes(x = Month, 
+             y = avgmax,
+             group = Year,
+             colour = avgmax)) +
+  geom_point() +
+  geom_line() +
+  scale_colour_gradient2(low = "#E1B823", mid = "#DD8033" , high = "#a4111e",
+                         midpoint = 25) +
+  labs(title = 'Average daily-maximum temperature in Australia over the past 100 years',
+       subtitle = 'Separated by month',
+       caption  = "Data Source: ACORN-SAT",
+       y = 'Temperature (°C)',
+       x = "Year") +
+  theme_bw() +
+  theme(panel.border = element_blank(),
+        axis.line = element_line(colour = "black", size = 0.2),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        plot.title = element_text(size = 6, hjust = 0.5),
+        legend.text = element_text(size = 6)) +
+  theme_plot_text +
+  labs(color = '°C', size = 6) 
+```
+
+To animate this plot, we will use "transition states" from package gganimate. This function attributes values of a dimension (in this case, year) to an individual frame. We can then tweak parameters of the animation (length of transitions, whether the plot animation loops, etc)
+
+```{r month plot animate, results='hide', message=FALSE, warning=FALSE}
+month.plot <- month.plot + 
+  transition_states(states = Year,
+                    transition_length = 3, # relative length of transistion
+                    state_length = 1, # relative length of pause at the states
+                    wrap = TRUE) + # loops the animation
+labs(subtitle  = 'Year: {closest_state}') + # includes dynamic sub-title
+shadow_mark()
+```
+
+Finally we can animate & view the plot, setting parameters such as framers per second, total frames in the animation, & number of frames comprising the end pause
+
+```{r month plot animate two, echo=FALSE, message=FALSE, warning=FALSE}
+# Animate Plot
+animate(month.plot, 
+        end_pause = 40,
+        fps = 30,
+        nframe = 400) 
+```
+
+Following this formula, lets create two further plots
+
+I have taken inspiration from an approach to animated time-series plots by one of R's gurus [Thomas Lin Pedersen](https://github.com/thomasp85/gganimate/wiki/Temperature-time-series)
+
+The first of these plots will look at temperature change by month of the year, whilst the second plot will examine by region of Australia
+
+# Plot [2]
+
+## Time-series of average max temperature, animated by month
+
+Let's prep the data for plotting 
+
+```{r month era data prep, results='hide', message=FALSE, warning=FALSE}
+# Create table
+temp.max3 <- tbl %>% 
+  group_by(Month, Era) %>% 
+  filter(Era != 2019) %>% 
+  summarise(avgmax = mean(maximum.temperature..degC., na.rm = TRUE))
+
+# Convert numeric months to text 
+temp.max3[temp.max3=="12"] <- "December"
+temp.max3[temp.max3=="1"] <- "January"
+temp.max3[temp.max3=="2"] <- "February"
+temp.max3[temp.max3=="3"] <- "March"
+temp.max3[temp.max3=="4"] <- "April"
+temp.max3[temp.max3=="5"] <- "May"
+temp.max3[temp.max3=="6"] <- "June"
+temp.max3[temp.max3=="7"] <- "July"
+temp.max3[temp.max3=="8"] <- "August"
+temp.max3[temp.max3=="9"] <- "September"
+temp.max3[temp.max3=="10"] <- "October"
+temp.max3[temp.max3=="11"] <- "November"
+
+# remove s
+temp.max3$Era = substr(temp.max3$Era,1,nchar(temp.max3$Era)-1)
+# to numeric
+temp.max3$Era <- as.numeric(temp.max3$Era)
+```
+
+& create a custom colour palette for the plot 
+
+```{r month era data prep two, results='hide', message=FALSE, warning=FALSE}
+group.colors.gradient <- c("January" = "#ab1312",
+                           "February" = "#b01e13", 
+                           "March" = "#b83616", 
+                           "April" = "#ca6c1b", 
+                           "May" = "#d4891e", 
+                           "June" = "#dda821", 
+                           "July" = "#e1b823", 
+                           "August" = "#d89820",  
+                           "September" = "#cf7a1d", 
+                           "October" = "#c65e1a", 
+                           "November" = "#bd4317", 
+                           "December" = "#b42a14") 
+```
+
+Create our month plot 
+
+```{r month era plot animate, results='hide', message=FALSE, warning=FALSE}
+month.plot <- 
+  ggplot(temp.max3, aes(Era, avgmax, group = Month, color = Month)) + 
+  geom_line() + 
+  geom_segment(aes(xend = 2018, yend = avgmax), linetype = 2, colour = 'grey') + 
+  geom_point(size = 2) + 
+  geom_text(aes(x = 2018, label = Month), hjust = 0) + 
+  scale_colour_manual(values = group.colors.gradient) +
+  transition_reveal(Era) + 
+  coord_cartesian(clip = 'off') + 
+  labs(title = 'Average daily-maximum temperature in Australia over the past 100 years',
+       subtitle = 'Separated by month',
+       caption  = "Data Source: ACORN-SAT",
+       y = 'Temperature (°C)',
+       x = "Year") +
+  theme_minimal() + 
+  theme(legend.position = "none") +
+  theme(plot.margin = margin(5.5, 40, 5.5, 5.5)) 
+```
+
+Now view it
+
+```{r month era plot animate two, echo=FALSE, message=FALSE, warning=FALSE}
+animate(month.plot, 
+        end_pause = 40,
+        fps = 30,
+        nframe = 200) 
+```
+
+# Plot [3]
+
+## Time-series of average max temperature, animated by state
+
+Let's prep the data for plotting 
+
+```{r state data prep, results='hide', message=FALSE, warning=FALSE}
+# Create table
+temp.max3C <- tbl %>% 
+  group_by(State, Era) %>% 
+  filter(Era != 2019) %>% 
+  summarise(avgmax = mean(maximum.temperature..degC., na.rm = TRUE))
+
+# remove s
+temp.max3C$Era = substr(temp.max3C$Era,1,nchar(temp.max3C$Era)-1)
+# to numeric
+temp.max3C$Era <- as.numeric(temp.max3C$Era)
+```
+
+& create a custom colour palette for the plot 
+
+```{r state data prep two, results='hide', message=FALSE, warning=FALSE}
+state.colors.gradient <- 
+  c("NT" = "#ab1312", 
+    "TAS" = "#e1b823", 
+    "VIC" = "#d89820",  
+    "SA" = "#cf7a1d", 
+    "NSW" = "#c65e1a", 
+    "WA" = "#bd4317", 
+    "QLD" = "#b42a14") 
+```
+
+Create our state plot 
+
+```{r state plot animate, results='hide', message=FALSE, warning=FALSE}
+state.plot <- 
+  ggplot(temp.max3C, aes(Era, avgmax, group = State, color = State)) + 
+  geom_line() + 
+  geom_segment(aes(xend = 2018, yend = avgmax), linetype = 2, colour = 'grey') + 
+  geom_point(size = 2) + 
+  geom_text(aes(x = 2018, label = State), hjust = 0) + 
+  scale_colour_manual(values = state.colors.gradient) +
+  coord_cartesian(clip = 'off') + 
+  labs(title = 'Average daily-maximum temperature in Australia over the past 100 years',
+       subtitle = 'Separated by State',
+       caption  = "Data Source: ACORN-SAT",
+       y = 'Temperature (°C)',
+       X = "Year") +
+  theme_minimal() + 
+  theme(legend.position = "none") +
+  theme(plot.margin = margin(5.5, 40, 5.5, 5.5)) +
+  transition_reveal(Era) 
+```
+
+Now view it
+
+```{r state plot animate two, echo=FALSE, message=FALSE, warning=FALSE}
+animate(state.plot, 
+        end_pause = 40,
+        fps = 30,
+        nframe = 200)
+```
