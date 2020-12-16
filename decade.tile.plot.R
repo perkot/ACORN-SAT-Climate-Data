@@ -108,12 +108,12 @@ p <-
   
   labs(x = "",
        y = "",
-       title = "Avg daily max temperature",
-       subtitle = "Between 2008 & 2018",
+       title = "Average of daily maximum temperature °C between 2008 & 2018",
+       subtitle = "Average value calculated from 112 weather stations across AU ",
        caption = "Data-source: ACORN-SAT") +
   
   # Guides - a useful way to format legend 
-  guides(fill = guide_legend(title = "avg max", # title of legend
+  guides(fill = guide_legend(title = "Max °C", # title of legend
                              title.hjust = 0.5, # centre title
                              title.vjust = 0.5, # centre title
                              breaks = tr, # specify breaks for legend format rather than colour scale
@@ -265,12 +265,12 @@ p <-
   
   labs(x = "",
        y = "",
-       title = "Avg daily max temperature",
-       subtitle = "Between 2008 & 2018",
+       title = "Daily maximum temperature °C across Australia between 2013 & 2018",
+       subtitle = "Average °C derived from 112 weather stations across AU ",
        caption = "Data-source: ACORN-SAT") +
   
   # Guides - a useful way to format legend 
-  guides(fill = guide_legend(title = "avg max", # title of legend
+  guides(fill = guide_legend(title = "Max °C", # title of legend
                              title.hjust = 0.5, # centre title
                              title.vjust = 0.5, # centre title
                              breaks = tr, # specify breaks for legend format rather than colour scale
@@ -283,8 +283,8 @@ p <-
     labels = c("2013", "2014", "2015", "2016", "2017", "2018")) + # label it as year - cleaner aesthetic
   # remove leading zero from x-axis 
   scale_y_discrete(
-    breaks = c("01", "05", "10", "15", "20", "25", "30"), # pick only first-month
-    labels = c("1", "5", "10", "15", "20", "25", "30")) + # label it as year - cleaner aesthetic
+    breaks = c("01","05","10","15","20","25","31"), # pick only first-month
+    labels = c("1","5","10","15","20","25","31")) + # label it as year - cleaner aesthetic
   
   # crucial - removes gray areas from empty cells (i.e. February 30)
   theme(panel.background = element_rect(fill = "#FFFDFA")) + 
@@ -303,7 +303,8 @@ p <-
                                   face = "bold"),
         plot.subtitle = element_text(colour = "#5d6b75",
                                      hjust = 0,
-                                     size = 8),
+                                     size = 8,
+                                     margin = margin(0,3,1,0)),
         plot.caption = element_text(colour = "#5d6b75",
                                     hjust = 0,
                                     vjust = 1,
@@ -338,5 +339,12 @@ p <-
   ) 
 p
 
+# Save Plot
+ggsave(p,
+       filename = "avg-max-day-aus.png",
+       height = 8.8,
+       width = 8.8,
+       units = "in",
+       dpi = 200)
 
 
