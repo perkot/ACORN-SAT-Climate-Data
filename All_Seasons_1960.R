@@ -145,8 +145,6 @@ All_Seasons_1960$Season <- factor(All_Seasons_1960$Season,
 # Alternative legend display to the usual gradient 
 
 sl2 <- c(2,5,10,15,20,25,30,35,40,43)
-
-
 TILE.MAX.SEASONS <- All_Seasons_1960 %>% 
   # order by station, & average max temperature 
   mutate(name = fct_reorder(Station, Max_Average)) %>%
@@ -163,7 +161,7 @@ TILE.MAX.SEASONS <- All_Seasons_1960 %>%
                        mid = "#ffe747",
                        high = "#e62a19",
                        midpoint = 22,
-                       na.value = "#fcf9f0",
+                       na.value = "#fffdf2",
                        name = "Average Daily Max",
                        guide = "legend", # can specify colour scale, or legend format
                        breaks = sl2) + # specify breaks (this does not work here)
@@ -191,7 +189,7 @@ TILE.MAX.SEASONS <- All_Seasons_1960 %>%
         legend.title = element_text(colour = "#4E4F4E",
                                     size = 8,
                                     face = "bold"),
-        legend.margin = margin(grid::unit(0,"cm")),
+        # legend.margin = margin(grid::unit(0,"cm")),
         legend.text = element_text(colour = "#4E4F4E",
                                    size = 8),
         legend.key.height = grid::unit(0.6,"cm"),
@@ -205,12 +203,12 @@ TILE.MAX.SEASONS <- All_Seasons_1960 %>%
         axis.text.y = element_text(size = 4,
                                    vjust = 0.2,
                                    colour = "#4E4F4E"),
-        axis.ticks = element_line(size = 0.2),
-        plot.background = element_rect(fill = "#fcf9f0"),
-        legend.background = element_rect(fill = "#fcf9f0"),
+        axis.ticks = element_line(size = 0.2, colour = "#6b6e6b"),
+        plot.background = element_rect(fill = "#fffdf2"),
+        legend.background = element_rect(fill = "#fffdf2"),
         panel.border = element_blank(),
         strip.text.x = element_text(size = 8, colour = "#6b6e6b"),
-        strip.background = element_rect(fill="#fcf9f0"),
+        strip.background = element_rect(fill="#fffdf2"),
         plot.margin = margin(0.7,0.4,0.1,0.2,"cm"),
         plot.title = element_text(colour = "#4E4F4E",
                                   hjust = 0,
@@ -233,6 +231,118 @@ ggsave(TILE.MAX.SEASONS,
        width = 16.8,
        units = "in",
        dpi = 200)
+
+
+# ODONATTA IN 1994 APPEARS TO BE AN OUTLIER
+Yearly_Average2 <- Yearly_Average %>% 
+  mutate(avg_max = na_if(avg_max, 43.80)) %>% 
+  filter(Year != 2019)
+
+
+sl3 <- c(10,15,20,25,30,35,37)
+TILE.MAX <- Yearly_Average2 %>% 
+  # order by station, & average max temperature 
+  mutate(name = fct_reorder(Station, Max_Average)) %>%
+  ggplot(aes(x = Year,
+             y = name)) + 
+  geom_tile(aes(fill = avg_max),
+            colour = "white",
+            size = 0.2,
+            na.rm = FALSE) +
+  
+  scale_fill_gradient2(low = "#78e3eb",
+                       mid = "#ffe747",
+                       high = "#e62a19",
+                       midpoint = 25,
+                       na.value = "#fffdf2",
+                       name = "Average Daily Max",
+                       guide = "legend", # can specify colour scale, or legend format
+                       breaks = sl3) + # specify breaks (this does not work here)
+  
+  # Guides - a useful way to format legend 
+  guides(fill = guide_legend(title = "°C", # title of legend
+                             title.hjust = 0.2, # centre title
+                             title.vjust = 0.2, # centre title
+                             breaks = sl2, # specify breaks for legend format rather than colour scale
+                             reverse = TRUE)) + # descending rather than ascending order for scale
+  
+  
+  coord_equal() + # perfect square 
+  # guides(fill = guide_legend(title = "°C")) +
+  labs(x = "",
+       y = "",
+       title = "Average yearly maximum temperature in Australia (°C)",
+       subtitle = "Temperature recordings from 112 weather stations between 1910 & 2018",
+       caption = "Dataset: The Australian Climate Observations Reference Network – Surface Air Temperature (ACORN-SAT)"
+  ) +
+  scale_y_discrete(expand = c(0,0)) +
+  scale_x_discrete(expand = c(0,0),
+                   breaks = c("1910","1920","1930","1940","1950",
+                              "1960","1970","1980","1990","2000","2010")) +
+  # scale_fill_manual(values=WarmPalette,
+  #                   na.value = "#fcf5e1")+ 
+  #coord_fixed()+
+  theme_grey(base_size = 10)+
+  theme(legend.position = "right",
+        legend.direction = "vertical",
+        legend.title = element_text(colour = "#4E4F4E",
+                                    size = 8,
+                                    face = "bold"),
+        # legend.margin = margin(grid::unit(0,"cm")),
+        legend.text = element_text(colour = "#4E4F4E",
+                                   size = 8),
+        legend.key.height = grid::unit(0.6,"cm"),
+        legend.key.width = grid::unit(0.6,"cm"),
+        legend.margin = margin(0,0,0,0.2,"cm"), # move a little away from plot, to the right
+        # axis.text.x = element_blank(),
+        # axis.text.y = element_blank(),
+        # axis.ticks = element_blank(),
+        axis.text.x = element_text(size = 6,
+                                   colour = "#4E4F4E"),
+        axis.text.y = element_text(size = 4,
+                                   vjust = 0.2,
+                                   colour = "#4E4F4E"),
+        axis.ticks = element_line(size = 0.2, 
+                                  colour = "#878683"),
+        plot.background = element_rect(fill = "#fffdf2"),
+        legend.background = element_rect(fill = "#fffdf2"),
+        panel.border = element_blank(),
+        strip.text.x = element_text(size = 8, colour = "#6b6e6b"),
+        strip.background = element_rect(fill="#fffdf2"),
+        plot.margin = margin(0.7,0.4,0.1,0.2,"cm"),
+        plot.title = element_text(colour = "#4E4F4E",
+                                  hjust = 0,
+                                  size = 10,
+                                  face = "bold"),
+        plot.subtitle = element_text(colour = "#6b6e6b",
+                                     hjust = 0,
+                                     size = 9),
+        plot.caption = element_text(colour = "#4E4F4E",
+                                    hjust = 0,
+                                    vjust = 1,
+                                    size = 6,
+                                    face = "italic",
+                                    margin = margin(-5,0,0,0))) # adjust position ... top, bottom, left, right
+TILE.MAX
+
+
+
+# Save Plot
+ggsave(TILE.MAX,
+       filename = "avg-max.png",
+       height = 8.8,
+       width = 8.8,
+       units = "in",
+       dpi = 200)
+
+
+
+
+
+
+
+
+
 
 # ----------------------------------
 # CREATE AESTHETICS FOR VISUALISATIONS 
